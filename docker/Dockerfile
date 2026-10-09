@@ -1,17 +1,15 @@
-# ── Stage 1: Fetch go2rtc binary + video-rtc.js ─────────────────────────────
-FROM alpine:3.21 AS go2rtc-fetch
+# ── Stage 1: Build go2rtc from source (v1.9.14 + patches) ───────────────────
+FROM golang:1.26.4-alpine AS go2rtc-fetch
 ARG GO2RTC_VERSION=1.9.14
 ARG TARGETARCH
-RUN apk add --no-cache curl ca-certificates && \
-    ARCH=${TARGETARCH}; \
-    if [ "$ARCH" = "arm" ]; then ARCH="arm"; fi; \
-    curl -fsSL \
-      "https://github.com/AlexxIT/go2rtc/releases/download/v${GO2RTC_VERSION}/go2rtc_linux_${ARCH}" \
-      -o /go2rtc && \
-    chmod +x /go2rtc && \
-    curl -fsSL \
-      "https://github.com/AlexxIT/go2rtc/raw/v${GO2RTC_VERSION}/www/video-rtc.js" \
-      -o /video-rtc.js
+RUN apk add --no-cache git
+WORKDIR /go2rtc-src
+RUN git clone --depth 1 --branch v${GO2RTC_VERSION} https://github.com/AlexxIT/go2rtc.git .
+COPY docker/go2rtc-patches /patches
+RUN for p in /patches/*.patch; do [ -f "$p" ] && git apply "$p"; done
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags="-s -w" -o /go2rtc . && \
+    cp www/video-rtc.js /video-rtc.js
 
 # ── Stage 2: Build Go binary ──────────────────────────────────────────────────
 FROM golang:1.26.4-alpine AS builder

@@ -1,0 +1,16 @@
+diff --git a/pkg/webrtc/conn.go b/pkg/webrtc/conn.go
+index 924fd55..4f181d3 100644
+--- a/pkg/webrtc/conn.go
++++ b/pkg/webrtc/conn.go
+@@ -137,9 +137,8 @@ func NewConn(pc *webrtc.PeerConnection) *Conn {
+ 			for _, sender := range c.Senders {
+ 				sender.Start()
+ 			}
+-		case webrtc.PeerConnectionStateDisconnected, webrtc.PeerConnectionStateFailed, webrtc.PeerConnectionStateClosed:
+-			// disconnect event comes earlier, than failed
+-			// but it comes only for success connections
++		case webrtc.PeerConnectionStateFailed, webrtc.PeerConnectionStateClosed:
++			// Disconnected can recover; pion emits Failed after its timeout.
+ 			_ = c.Close()
+ 		}
+ 	})
