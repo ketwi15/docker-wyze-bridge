@@ -255,6 +255,14 @@ func TestHandleShimKVSSignaling_HappyPath(t *testing.T) {
 	if len(servers) != 2 {
 		t.Errorf("servers count = %d, want 2", len(servers))
 	}
+	if s0, ok := servers[0].(map[string]interface{}); ok {
+		if _, has := s0["urls"]; !has {
+			t.Errorf("first ICE server missing urls key, keys=%v", s0)
+		}
+		if _, has := s0["url"]; has {
+			t.Errorf("ICE server must use urls, not url")
+		}
+	}
 }
 
 func TestHandleShimKVSSignaling_NonWebRTCCameraRejected(t *testing.T) {
