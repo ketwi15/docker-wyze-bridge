@@ -16,7 +16,7 @@ type KVSStreamProvider interface {
 
 // KVSIceServer matches the shape go2rtc's kinesis client deserializes.
 type KVSIceServer struct {
-	URL        string `json:"url"`
+	URL        string `json:"urls"`
 	Username   string `json:"username"`
 	Credential string `json:"credential"`
 }
@@ -32,11 +32,11 @@ func (s *Server) SetKVSProvider(p KVSStreamProvider) {
 // and go2rtc expects JSON back shaped like:
 //
 //	{"ClientId":"<phone_id>","cam":"<name>","result":"ok",
-//	 "servers":[{"url":...,"username":...,"credential":...}],
+//	 "servers":[{"urls":...,"username":...,"credential":...}],
 //	 "signalingUrl":"wss://wyze-mars-webcsrv.wyzecam.com?token=..."}
 //
 // ClientId's capital I matters — that's what go2rtc's wyzeKVS struct
-// tag wants. go2rtc handles everything downstream (WSS dial, SDP
+// tag wants. ICE servers use the urls key per go2rtc UnmarshalICEServers. go2rtc handles everything downstream (WSS dial, SDP
 // negotiation, track fanout).
 func (s *Server) handleShimKVSSignaling(w http.ResponseWriter, r *http.Request) {
 	if s.kvs == nil {
