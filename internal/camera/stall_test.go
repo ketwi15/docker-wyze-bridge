@@ -101,7 +101,6 @@ func TestStallTracker_CooldownTUTK(t *testing.T) {
 	}
 
 	now = now.Add(46 * time.Second)
-	tr.Evaluate("cam", "tutk", s)
 	if d := tr.Evaluate("cam", "tutk", s); !d.Restart {
 		t.Fatal("expected restart after tutk cooldown")
 	}
@@ -134,7 +133,6 @@ func TestStallTracker_CooldownWebRTC(t *testing.T) {
 	}
 
 	now = now.Add(3*time.Minute + time.Second)
-	tr.Evaluate("og", "webrtc", s)
 	if d := tr.Evaluate("og", "webrtc", s); !d.Restart {
 		t.Fatal("expected restart after webrtc cooldown")
 	}
