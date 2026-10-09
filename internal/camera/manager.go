@@ -43,6 +43,8 @@ type Manager struct {
 	// onProtocolFallback fires the first time a camera is auto-promoted
 	// from TUTK to WebRTC after crossing the fallback threshold.
 	onProtocolFallback func(camName string, oldProtocol, newProtocol string, failStreak int)
+	stallTracker       *StallTracker
+	stallRestarting    sync.Map // camera name → struct{}
 }
 
 // chronicErrorThreshold is the consecutive-error count at which a
@@ -72,6 +74,7 @@ func NewManager(
 		},
 		cameras:         make(map[string]*Camera),
 		chronicReported: make(map[string]bool),
+		stallTracker:    NewStallTracker(),
 	}
 	if go2rtcAPI != nil {
 		m.go2rtc.Store(go2rtcAPI)
@@ -391,7 +394,32 @@ func (m *Manager) HealthCheck(ctx context.Context) {
 			// per-call (streamSourceFor is idempotent).
 			_, protocol := m.streamSourceFor(cam)
 			m.recordTUTKFailure(cam, protocol)
+			continue
 		}
+
+		_, protocol := m.streamSourceFor(cam)
+		dec := m.stallTracker.Evaluate(cam.Name(), protocol, info)
+		if !dec.Restart {
+			continue
+		}
+		if _, loaded := m.stallRestarting.LoadOrStore(cam.Name(), struct{}{}); loaded {
+			continue
+		}
+		m.log.Warn().
+			Str("cam", cam.Name()).
+			Str("protocol", protocol).
+			Int("consumers", dec.Consumers).
+			Int64("bytes", dec.Bytes).
+			Int("streak", dec.Streak).
+			Msg("stream stalled with active consumers, restarting")
+		go func(c *Camera, prot string) {
+			defer m.stallRestarting.Delete(c.Name())
+			if go2rtc := m.go2rtcClient(); go2rtc != nil {
+				_ = go2rtc.DeleteStream(ctx, c.Name())
+			}
+			m.changeState(c, StateOffline)
+			m.connectCamera(ctx, c)
+		}(cam, protocol)
 	}
 }
 

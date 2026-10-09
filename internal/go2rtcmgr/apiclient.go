@@ -26,16 +26,47 @@ type StreamInfo struct {
 	Consumers []ConsumerInfo `json:"consumers,omitempty"`
 }
 
+// MediaCounter tracks bytes/packets on a go2rtc media leg.
+type MediaCounter struct {
+	Bytes   int64 `json:"bytes"`
+	Packets int64 `json:"packets"`
+}
+
 // ProducerInfo describes a stream producer (source).
 type ProducerInfo struct {
-	URL    string        `json:"url,omitempty"`
-	Medias []interface{} `json:"medias,omitempty"`
+	ID         int            `json:"id,omitempty"`
+	URL        string         `json:"url,omitempty"`
+	RemoteAddr string         `json:"remote_addr,omitempty"`
+	Medias     []interface{}  `json:"medias,omitempty"`
+	Receivers  []MediaCounter `json:"receivers,omitempty"`
+}
+
+// Connected reports whether go2rtc has an active producer session
+// (as opposed to a configured-but-idle source URL in the producers list).
+func (p ProducerInfo) Connected() bool {
+	return p.ID != 0 || p.RemoteAddr != "" || len(p.Receivers) > 0
 }
 
 // ConsumerInfo describes a stream consumer.
 type ConsumerInfo struct {
-	URL    string        `json:"url,omitempty"`
-	Medias []interface{} `json:"medias,omitempty"`
+	ID         int           `json:"id,omitempty"`
+	URL        string        `json:"url,omitempty"`
+	RemoteAddr string        `json:"remote_addr,omitempty"`
+	Medias     []interface{} `json:"medias,omitempty"`
+}
+
+// ReceivedBytes sums receiver byte counts across connected producers.
+func (s *StreamInfo) ReceivedBytes() int64 {
+	var total int64
+	for _, p := range s.Producers {
+		if !p.Connected() {
+			continue
+		}
+		for _, r := range p.Receivers {
+			total += r.Bytes
+		}
+	}
+	return total
 }
 
 // NewAPIClient creates a new go2rtc API client.

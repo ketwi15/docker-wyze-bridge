@@ -162,6 +162,60 @@ func TestAPIClient_ErrorHandling(t *testing.T) {
 	}
 }
 
+func TestStreamInfo_ConnectedAndReceivedBytes(t *testing.T) {
+	const connectedJSON = `{
+		"producers":[{
+			"id":42,
+			"format_name":"wyze",
+			"protocol":"wyze/dtls",
+			"remote_addr":"192.168.4.40:48511",
+			"source":"wyze://192.168.4.40",
+			"receivers":[{"id":43,"bytes":6273499,"packets":594},{"id":44,"bytes":1200,"packets":10}]
+		}],
+		"consumers":[{"id":36,"format_name":"rtsp","protocol":"rtsp+tcp","remote_addr":"192.168.4.175:49482"}]
+	}`
+	var connected StreamInfo
+	if err := json.Unmarshal([]byte(connectedJSON), &connected); err != nil {
+		t.Fatalf("decode connected: %v", err)
+	}
+	if len(connected.Producers) != 1 || !connected.Producers[0].Connected() {
+		t.Fatal("connected producer should report Connected()")
+	}
+	if got := connected.ReceivedBytes(); got != 6273499+1200 {
+		t.Fatalf("ReceivedBytes = %d, want %d", got, 6273499+1200)
+	}
+
+	const idleJSON = `{"producers":[{"url":"wyze://192.168.4.40"}]}`
+	var idle StreamInfo
+	if err := json.Unmarshal([]byte(idleJSON), &idle); err != nil {
+		t.Fatalf("decode idle: %v", err)
+	}
+	if idle.Producers[0].Connected() {
+		t.Fatal("url-only producer should not be Connected()")
+	}
+	if idle.ReceivedBytes() != 0 {
+		t.Fatalf("idle ReceivedBytes = %d, want 0", idle.ReceivedBytes())
+	}
+
+	const webrtcJSON = `{
+		"producers":[{
+			"id":7,
+			"url":"wss://wyze-mars-webcsrv.wyzecam.com",
+			"receivers":[{"bytes":999,"packets":1}]
+		}]
+	}`
+	var webrtc StreamInfo
+	if err := json.Unmarshal([]byte(webrtcJSON), &webrtc); err != nil {
+		t.Fatalf("decode webrtc: %v", err)
+	}
+	if !webrtc.Producers[0].Connected() {
+		t.Fatal("webrtc producer with receivers should be Connected()")
+	}
+	if webrtc.ReceivedBytes() != 999 {
+		t.Fatalf("webrtc ReceivedBytes = %d", webrtc.ReceivedBytes())
+	}
+}
+
 func TestAPIClient_ConnectionRefused(t *testing.T) {
 	c := NewAPIClient("http://localhost:19999", zerolog.Nop())
 
