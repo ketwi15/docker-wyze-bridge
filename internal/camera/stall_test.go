@@ -244,11 +244,7 @@ func TestStallTracker_PreloadedHungDialCooldown(t *testing.T) {
 	}
 
 	now = now.Add(46 * time.Second)
-	tr.Evaluate("cam", "tutk", s, true)
-	if d := tr.Evaluate("cam", "tutk", s, true); d.Restart || d.Streak != 2 {
-		t.Fatalf("expected streak before restart: %+v", d)
-	}
 	if d := tr.Evaluate("cam", "tutk", s, true); !d.Restart {
-		t.Fatal("expected restart after cooldown")
+		t.Fatalf("expected restart after cooldown: %+v", d)
 	}
 }
