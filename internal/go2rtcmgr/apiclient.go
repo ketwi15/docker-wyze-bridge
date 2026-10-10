@@ -237,3 +237,82 @@ func (c *APIClient) GetSnapshot(ctx context.Context, name string) ([]byte, error
 
 	return io.ReadAll(resp.Body)
 }
+
+const preloadHTTPTimeout = 25 * time.Second
+
+// AddPreload registers a persistent go2rtc probe consumer on the stream.
+// The PUT blocks while go2rtc dials the producer; use a long timeout.
+func (c *APIClient) AddPreload(ctx context.Context, name string) error {
+	u := fmt.Sprintf("%s/api/preload?src=%s&video&audio", c.baseURL, url.QueryEscape(name))
+	ctx, cancel := context.WithTimeout(ctx, preloadHTTPTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "PUT", u, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("add preload %q: %w", name, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("add preload %q: %d %s", name, resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+// DeletePreload removes the go2rtc preload consumer for a stream.
+func (c *APIClient) DeletePreload(ctx context.Context, name string) error {
+	u := fmt.Sprintf("%s/api/preload?src=%s", c.baseURL, url.QueryEscape(name))
+
+	req, err := http.NewRequestWithContext(ctx, "DELETE", u, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("delete preload %q: %w", name, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("delete preload %q: %d %s", name, resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+// ListPreloads returns stream names that currently have a preload consumer.
+func (c *APIClient) ListPreloads(ctx context.Context) (map[string]bool, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/api/preload", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("list preloads: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("list preloads: %d %s", resp.StatusCode, string(body))
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, fmt.Errorf("decode preloads: %w", err)
+	}
+
+	out := make(map[string]bool, len(raw))
+	for name := range raw {
+		out[name] = true
+	}
+	return out, nil
+}

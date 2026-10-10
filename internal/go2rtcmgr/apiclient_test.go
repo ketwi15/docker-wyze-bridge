@@ -216,6 +216,61 @@ func TestStreamInfo_ConnectedAndReceivedBytes(t *testing.T) {
 	}
 }
 
+func TestAPIClient_Preload(t *testing.T) {
+	var gotMethod, gotPath, gotQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotQuery = r.URL.RawQuery
+		switch {
+		case r.URL.Path == "/api/preload" && r.Method == "PUT":
+			w.WriteHeader(http.StatusOK)
+		case r.URL.Path == "/api/preload" && r.Method == "DELETE":
+			w.WriteHeader(http.StatusOK)
+		case r.URL.Path == "/api/preload" && r.Method == "GET":
+			json.NewEncoder(w).Encode(map[string]bool{"kjs_room": true})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	c := NewAPIClient(server.URL, zerolog.Nop())
+	if err := c.AddPreload(context.Background(), "kjs_room"); err != nil {
+		t.Fatalf("AddPreload: %v", err)
+	}
+	if gotMethod != "PUT" || gotPath != "/api/preload" {
+		t.Fatalf("AddPreload method/path = %s %s", gotMethod, gotPath)
+	}
+	if gotQuery != "src=kjs_room&video&audio" {
+		t.Fatalf("AddPreload query = %q", gotQuery)
+	}
+
+	if err := c.DeletePreload(context.Background(), "kjs_room"); err != nil {
+		t.Fatalf("DeletePreload: %v", err)
+	}
+	set, err := c.ListPreloads(context.Background())
+	if err != nil {
+		t.Fatalf("ListPreloads: %v", err)
+	}
+	if !set["kjs_room"] {
+		t.Fatal("expected kjs_room in preloads")
+	}
+}
+
+func TestAPIClient_AddPreloadError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("fail"))
+	}))
+	defer server.Close()
+
+	c := NewAPIClient(server.URL, zerolog.Nop())
+	if err := c.AddPreload(context.Background(), "x"); err == nil {
+		t.Fatal("expected error for 500")
+	}
+}
+
 func TestAPIClient_ConnectionRefused(t *testing.T) {
 	c := NewAPIClient("http://localhost:19999", zerolog.Nop())
 

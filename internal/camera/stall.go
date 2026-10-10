@@ -22,9 +22,10 @@ type StallTracker struct {
 }
 
 type stallCamState struct {
-	lastBytes   int64
-	streak      int
-	lastRestart time.Time
+	lastBytes    int64
+	streak       int
+	preloadFails int
+	lastRestart  time.Time
 }
 
 // NewStallTracker returns a tracker with production defaults.
@@ -126,4 +127,40 @@ func (t *StallTracker) Reset(name string) {
 	t.mu.Lock()
 	delete(t.states, name)
 	t.mu.Unlock()
+}
+
+// PreloadFailureDecision is returned when AddPreload fails.
+type PreloadFailureDecision struct {
+	Restart  bool
+	Failures int
+}
+
+// RecordPreloadSuccess clears consecutive preload failure count.
+func (t *StallTracker) RecordPreloadSuccess(name string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.stateFor(name).preloadFails = 0
+}
+
+// RecordPreloadFailure increments preload failures and may request a stream
+// restart using the same cooldown as byte-stall restarts.
+func (t *StallTracker) RecordPreloadFailure(name, protocol string) PreloadFailureDecision {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	st := t.stateFor(name)
+	st.preloadFails++
+	dec := PreloadFailureDecision{Failures: st.preloadFails}
+	if st.preloadFails < 2 {
+		return dec
+	}
+	if t.Now().Sub(st.lastRestart) < t.cooldown(protocol) {
+		return dec
+	}
+	st.lastRestart = t.Now()
+	st.preloadFails = 0
+	st.streak = 0
+	st.lastBytes = 0
+	dec.Restart = true
+	return dec
 }

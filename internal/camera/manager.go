@@ -45,6 +45,7 @@ type Manager struct {
 	onProtocolFallback func(camName string, oldProtocol, newProtocol string, failStreak int)
 	stallTracker       *StallTracker
 	stallRestarting    sync.Map // camera name → struct{}
+	preloadInFlight    sync.Map // camera name → struct{}
 }
 
 // chronicErrorThreshold is the consecutive-error count at which a
@@ -316,6 +317,7 @@ func (m *Manager) connectCamera(ctx context.Context, cam *Camera) {
 		Str("protocol", protocol).
 		Msg("camera connected successfully")
 	m.changeState(cam, StateStreaming)
+	m.ensurePreloadAsync(ctx, cam)
 }
 
 // streamSourceFor returns the go2rtc source URL and a label for the
@@ -343,6 +345,11 @@ func (m *Manager) HealthCheck(ctx context.Context) {
 	if err != nil {
 		m.log.Warn().Err(err).Msg("health check: failed to list streams")
 		return
+	}
+	preloads, preloadErr := go2rtc.ListPreloads(ctx)
+	if preloadErr != nil {
+		m.log.Warn().Err(preloadErr).Msg("health check: failed to list preloads")
+		preloads = nil
 	}
 
 	m.mu.RLock()
@@ -399,27 +406,21 @@ func (m *Manager) HealthCheck(ctx context.Context) {
 
 		_, protocol := m.streamSourceFor(cam)
 		dec := m.stallTracker.Evaluate(cam.Name(), protocol, info)
-		if !dec.Restart {
+		if dec.Restart {
+			m.log.Warn().
+				Str("cam", cam.Name()).
+				Str("protocol", protocol).
+				Int("consumers", dec.Consumers).
+				Int64("bytes", dec.Bytes).
+				Int("streak", dec.Streak).
+				Msg("stream stalled with active consumers, restarting")
+			m.restartStreamAsync(ctx, cam)
 			continue
 		}
-		if _, loaded := m.stallRestarting.LoadOrStore(cam.Name(), struct{}{}); loaded {
-			continue
+
+		if preloads != nil && m.wantsPreload(cam) && !preloads[cam.Name()] {
+			m.ensurePreloadAsync(ctx, cam)
 		}
-		m.log.Warn().
-			Str("cam", cam.Name()).
-			Str("protocol", protocol).
-			Int("consumers", dec.Consumers).
-			Int64("bytes", dec.Bytes).
-			Int("streak", dec.Streak).
-			Msg("stream stalled with active consumers, restarting")
-		go func(c *Camera, prot string) {
-			defer m.stallRestarting.Delete(c.Name())
-			if go2rtc := m.go2rtcClient(); go2rtc != nil {
-				_ = go2rtc.DeleteStream(ctx, c.Name())
-			}
-			m.changeState(c, StateOffline)
-			m.connectCamera(ctx, c)
-		}(cam, protocol)
 	}
 }
 
@@ -580,7 +581,9 @@ func (m *Manager) StopStream(ctx context.Context, name string) {
 	}
 	if go2rtc := m.go2rtcClient(); go2rtc != nil {
 		_ = go2rtc.DeleteStream(ctx, name)
+		_ = go2rtc.DeletePreload(ctx, name)
 	}
+	m.stallTracker.Reset(name)
 	m.changeState(cam, StateOffline)
 }
 

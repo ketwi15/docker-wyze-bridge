@@ -138,6 +138,39 @@ func TestStallTracker_CooldownWebRTC(t *testing.T) {
 	}
 }
 
+func TestStallTracker_PreloadFailureCooldown(t *testing.T) {
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	tr := NewStallTracker()
+	tr.TUTKCooldown = 45 * time.Second
+	tr.Now = func() time.Time { return now }
+
+	if d := tr.RecordPreloadFailure("cam", "tutk"); d.Restart || d.Failures != 1 {
+		t.Fatalf("first failure: %+v", d)
+	}
+	if d := tr.RecordPreloadFailure("cam", "tutk"); !d.Restart || d.Failures != 2 {
+		t.Fatalf("second failure should restart: %+v", d)
+	}
+
+	tr.RecordPreloadFailure("cam", "tutk")
+	if d := tr.RecordPreloadFailure("cam", "tutk"); d.Restart {
+		t.Fatal("cooldown should block second restart")
+	}
+
+	now = now.Add(46 * time.Second)
+	if d := tr.RecordPreloadFailure("cam", "tutk"); !d.Restart {
+		t.Fatal("expected restart after cooldown")
+	}
+}
+
+func TestStallTracker_PreloadSuccessResets(t *testing.T) {
+	tr := NewStallTracker()
+	tr.RecordPreloadFailure("cam", "tutk")
+	tr.RecordPreloadSuccess("cam")
+	if d := tr.RecordPreloadFailure("cam", "tutk"); d.Failures != 1 || d.Restart {
+		t.Fatalf("success should reset counter: %+v", d)
+	}
+}
+
 func TestStallTracker_UnconnectedProducerWithConsumerStalls(t *testing.T) {
 	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	tr := NewStallTracker()

@@ -119,6 +119,12 @@ type Config struct {
 
 	// Refresh interval for Wyze API camera list
 	RefreshInterval time.Duration
+
+	// PreloadAll registers go2rtc preload consumers for every non-Gwell
+	// camera stream. PreloadCameras is a set of normalized bridge names
+	// (lowercase, underscores). Both empty means preload is disabled.
+	PreloadAll     bool
+	PreloadCameras map[string]struct{}
 }
 
 // CamOverride holds per-camera setting overrides.
@@ -240,6 +246,8 @@ func Load() (*Config, error) {
 		RefreshInterval: envDuration("REFRESH_INTERVAL", 30*time.Minute),
 	}
 
+	cfg.PreloadAll, cfg.PreloadCameras = parsePreloadCameras(env("PRELOAD_CAMERAS", ""))
+
 	// Derive default BRIDGE_PASSWORD from WYZE_EMAIL if not set
 	if cfg.BridgePassword == "" && cfg.WyzeEmail != "" {
 		parts := strings.SplitN(cfg.WyzeEmail, "@", 2)
@@ -294,6 +302,44 @@ func (c *Config) CamRecord(camName string) bool {
 
 func normalizeCamName(name string) string {
 	return strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(name), " ", "_"))
+}
+
+// parsePreloadCameras interprets PRELOAD_CAMERAS: empty (off), "all", or a
+// comma-separated list of bridge camera names.
+func parsePreloadCameras(raw string) (all bool, names map[string]struct{}) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return false, nil
+	}
+	if strings.EqualFold(raw, "all") {
+		return true, nil
+	}
+	names = make(map[string]struct{})
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		part = strings.ToLower(strings.ReplaceAll(part, " ", "_"))
+		names[part] = struct{}{}
+	}
+	return false, names
+}
+
+// PreloadWanted reports whether go2rtc preload should be kept warm for name.
+func (c *Config) PreloadWanted(name string) bool {
+	if c == nil {
+		return false
+	}
+	if !c.PreloadAll && len(c.PreloadCameras) == 0 {
+		return false
+	}
+	key := strings.ToLower(strings.TrimSpace(name))
+	if c.PreloadAll {
+		return true
+	}
+	_, ok := c.PreloadCameras[key]
+	return ok
 }
 
 func parseLogLevel(s string) zerolog.Level {
