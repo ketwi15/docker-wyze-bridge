@@ -408,7 +408,7 @@ func (m *Manager) HealthCheck(ctx context.Context) {
 		}
 
 		_, protocol := m.streamSourceFor(cam)
-		dec := m.stallTracker.Evaluate(cam.Name(), protocol, info)
+		dec := m.stallTracker.Evaluate(cam.Name(), protocol, info, m.isPreloaded(cam.Name()))
 		if dec.Restart {
 			m.log.Warn().
 				Str("cam", cam.Name()).

@@ -74,21 +74,30 @@ func streamHasConnectedProducer(info *go2rtcmgr.StreamInfo) bool {
 
 // Evaluate applies one health-check tick for a streaming camera. Call only
 // when the stream exists and len(Producers) > 0 — missing/empty streams keep
-// the legacy HealthCheck path.
-func (t *StallTracker) Evaluate(name, protocol string, info *go2rtcmgr.StreamInfo) StallDecision {
+// the legacy HealthCheck path. preloaded is true when go2rtc preload is
+// configured for this camera: a configured-but-unconnected producer must
+// recover even with zero RTSP/WebRTC consumers (preload alone wants a dial).
+func (t *StallTracker) Evaluate(name, protocol string, info *go2rtcmgr.StreamInfo, preloaded bool) StallDecision {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	st := t.stateFor(name)
 	consumers := len(info.Consumers)
-	if consumers == 0 {
+	bytes := info.ReceivedBytes()
+	connected := streamHasConnectedProducer(info)
+
+	if consumers == 0 && !preloaded {
 		st.streak = 0
 		return StallDecision{}
 	}
 
-	bytes := info.ReceivedBytes()
-	connected := streamHasConnectedProducer(info)
-	stalling := !connected || bytes <= st.lastBytes
+	var stalling bool
+	switch {
+	case consumers == 0 && preloaded:
+		stalling = !connected
+	default:
+		stalling = !connected || bytes <= st.lastBytes
+	}
 	if stalling {
 		st.streak++
 	} else {

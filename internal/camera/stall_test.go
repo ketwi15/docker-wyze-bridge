@@ -37,11 +37,11 @@ func TestStallTracker_IdleNoConsumersNeverRestarts(t *testing.T) {
 	tr.TUTKCooldown = time.Second
 
 	s := connectedTUTKStream(1000, 0)
-	if d := tr.Evaluate("cam", "tutk", s); d.Restart {
+	if d := tr.Evaluate("cam", "tutk", s, false); d.Restart {
 		t.Fatal("idle stream should not restart")
 	}
 	s.Producers[0].Receivers[0].Bytes = 1000
-	if d := tr.Evaluate("cam", "tutk", s); d.Restart {
+	if d := tr.Evaluate("cam", "tutk", s, false); d.Restart {
 		t.Fatal("flat bytes without consumers should not restart")
 	}
 }
@@ -54,7 +54,7 @@ func TestStallTracker_IncreasingBytesNeverRestarts(t *testing.T) {
 	s := connectedTUTKStream(100, 1)
 	for i := 0; i < 5; i++ {
 		s.Producers[0].Receivers[0].Bytes += 500
-		if d := tr.Evaluate("cam", "tutk", s); d.Restart {
+		if d := tr.Evaluate("cam", "tutk", s, false); d.Restart {
 			t.Fatalf("tick %d: increasing bytes should not restart", i)
 		}
 	}
@@ -68,14 +68,14 @@ func TestStallTracker_FlatBytesRestartsAfterTwoTicks(t *testing.T) {
 	tr.Now = func() time.Time { return now }
 
 	s := connectedTUTKStream(5000, 1)
-	if d := tr.Evaluate("cam", "tutk", s); d.Restart || d.Streak != 0 {
+	if d := tr.Evaluate("cam", "tutk", s, false); d.Restart || d.Streak != 0 {
 		t.Fatalf("first tick with baseline bytes: %+v", d)
 	}
 
-	if d := tr.Evaluate("cam", "tutk", s); d.Restart || d.Streak != 1 {
+	if d := tr.Evaluate("cam", "tutk", s, false); d.Restart || d.Streak != 1 {
 		t.Fatalf("second tick flat: %+v", d)
 	}
-	if d := tr.Evaluate("cam", "tutk", s); !d.Restart {
+	if d := tr.Evaluate("cam", "tutk", s, false); !d.Restart {
 		t.Fatalf("third tick should restart: %+v", d)
 	}
 }
@@ -88,20 +88,20 @@ func TestStallTracker_CooldownTUTK(t *testing.T) {
 	tr.Now = func() time.Time { return now }
 
 	s := connectedTUTKStream(100, 1)
-	tr.Evaluate("cam", "tutk", s)
-	tr.Evaluate("cam", "tutk", s)
-	if d := tr.Evaluate("cam", "tutk", s); !d.Restart {
+	tr.Evaluate("cam", "tutk", s, false)
+	tr.Evaluate("cam", "tutk", s, false)
+	if d := tr.Evaluate("cam", "tutk", s, false); !d.Restart {
 		t.Fatal("expected first restart")
 	}
 
-	tr.Evaluate("cam", "tutk", s)
-	tr.Evaluate("cam", "tutk", s)
-	if d := tr.Evaluate("cam", "tutk", s); d.Restart {
+	tr.Evaluate("cam", "tutk", s, false)
+	tr.Evaluate("cam", "tutk", s, false)
+	if d := tr.Evaluate("cam", "tutk", s, false); d.Restart {
 		t.Fatal("restart within tutk cooldown should be suppressed")
 	}
 
 	now = now.Add(46 * time.Second)
-	if d := tr.Evaluate("cam", "tutk", s); !d.Restart {
+	if d := tr.Evaluate("cam", "tutk", s, false); !d.Restart {
 		t.Fatal("expected restart after tutk cooldown")
 	}
 }
@@ -120,20 +120,20 @@ func TestStallTracker_CooldownWebRTC(t *testing.T) {
 		}},
 		Consumers: []go2rtcmgr.ConsumerInfo{{ID: 1}},
 	}
-	tr.Evaluate("og", "webrtc", s)
-	tr.Evaluate("og", "webrtc", s)
-	if d := tr.Evaluate("og", "webrtc", s); !d.Restart {
+	tr.Evaluate("og", "webrtc", s, false)
+	tr.Evaluate("og", "webrtc", s, false)
+	if d := tr.Evaluate("og", "webrtc", s, false); !d.Restart {
 		t.Fatal("expected first webrtc restart")
 	}
 
-	tr.Evaluate("og", "webrtc", s)
-	tr.Evaluate("og", "webrtc", s)
-	if d := tr.Evaluate("og", "webrtc", s); d.Restart {
+	tr.Evaluate("og", "webrtc", s, false)
+	tr.Evaluate("og", "webrtc", s, false)
+	if d := tr.Evaluate("og", "webrtc", s, false); d.Restart {
 		t.Fatal("restart within webrtc cooldown should be suppressed")
 	}
 
 	now = now.Add(3*time.Minute + time.Second)
-	if d := tr.Evaluate("og", "webrtc", s); !d.Restart {
+	if d := tr.Evaluate("og", "webrtc", s, false); !d.Restart {
 		t.Fatal("expected restart after webrtc cooldown")
 	}
 }
@@ -179,8 +179,73 @@ func TestStallTracker_UnconnectedProducerWithConsumerStalls(t *testing.T) {
 	tr.Now = func() time.Time { return now }
 
 	s := unconnectedConfiguredStream(1)
-	tr.Evaluate("cam", "tutk", s)
-	if d := tr.Evaluate("cam", "tutk", s); !d.Restart {
+	tr.Evaluate("cam", "tutk", s, false)
+	if d := tr.Evaluate("cam", "tutk", s, false); !d.Restart {
 		t.Fatalf("unconnected producer with consumer should restart: %+v", d)
+	}
+}
+
+func TestStallTracker_PreloadedUnconnectedNoConsumersRestarts(t *testing.T) {
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	tr := NewStallTracker()
+	tr.StreakThreshold = 2
+	tr.TUTKCooldown = time.Second
+	tr.Now = func() time.Time { return now }
+
+	s := unconnectedConfiguredStream(0)
+	if d := tr.Evaluate("cam", "tutk", s, true); d.Restart || d.Streak != 1 {
+		t.Fatalf("first tick: %+v", d)
+	}
+	if d := tr.Evaluate("cam", "tutk", s, true); !d.Restart {
+		t.Fatalf("second tick should restart: %+v", d)
+	}
+}
+
+func TestStallTracker_NonPreloadedUnconnectedNoConsumersIdle(t *testing.T) {
+	tr := NewStallTracker()
+	tr.StreakThreshold = 2
+	s := unconnectedConfiguredStream(0)
+	for i := 0; i < 5; i++ {
+		if d := tr.Evaluate("cam", "tutk", s, false); d.Restart {
+			t.Fatalf("tick %d: non-preloaded idle must not restart: %+v", i, d)
+		}
+	}
+}
+
+func TestStallTracker_PreloadedConnectedIncreasingBytesNoRestart(t *testing.T) {
+	tr := NewStallTracker()
+	tr.StreakThreshold = 2
+	s := connectedTUTKStream(100, 0)
+	for i := 0; i < 5; i++ {
+		s.Producers[0].Receivers[0].Bytes += 500
+		if d := tr.Evaluate("cam", "tutk", s, true); d.Restart {
+			t.Fatalf("tick %d: increasing bytes should not restart: %+v", i, d)
+		}
+	}
+}
+
+func TestStallTracker_PreloadedHungDialCooldown(t *testing.T) {
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	tr := NewStallTracker()
+	tr.StreakThreshold = 2
+	tr.TUTKCooldown = 45 * time.Second
+	tr.Now = func() time.Time { return now }
+
+	s := unconnectedConfiguredStream(0)
+	tr.Evaluate("cam", "tutk", s, true)
+	if d := tr.Evaluate("cam", "tutk", s, true); !d.Restart {
+		t.Fatal("expected first restart")
+	}
+
+	tr.Evaluate("cam", "tutk", s, true)
+	tr.Evaluate("cam", "tutk", s, true)
+	if d := tr.Evaluate("cam", "tutk", s, true); d.Restart {
+		t.Fatal("restart within cooldown should be suppressed")
+	}
+
+	now = now.Add(46 * time.Second)
+	tr.Evaluate("cam", "tutk", s, true)
+	if d := tr.Evaluate("cam", "tutk", s, true); !d.Restart {
+		t.Fatal("expected restart after cooldown")
 	}
 }

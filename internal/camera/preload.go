@@ -10,6 +10,10 @@ func (m *Manager) wantsPreload(cam *Camera) bool {
 	return protocol != "gwell"
 }
 
+func (m *Manager) isPreloaded(name string) bool {
+	return m.wantsPreload(m.GetCamera(name))
+}
+
 func (m *Manager) ensurePreloadAsync(ctx context.Context, cam *Camera) {
 	if !m.wantsPreload(cam) {
 		return
