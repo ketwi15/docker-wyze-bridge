@@ -240,19 +240,21 @@ func (c *APIClient) GetSnapshot(ctx context.Context, name string) ([]byte, error
 
 const preloadHTTPTimeout = 25 * time.Second
 
+func (c *APIClient) preloadHTTPClient() *http.Client {
+	return &http.Client{Timeout: preloadHTTPTimeout}
+}
+
 // AddPreload registers a persistent go2rtc probe consumer on the stream.
 // The PUT blocks while go2rtc dials the producer; use a long timeout.
 func (c *APIClient) AddPreload(ctx context.Context, name string) error {
 	u := fmt.Sprintf("%s/api/preload?src=%s&video&audio", c.baseURL, url.QueryEscape(name))
-	ctx, cancel := context.WithTimeout(ctx, preloadHTTPTimeout)
-	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "PUT", u, nil)
 	if err != nil {
 		return err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.preloadHTTPClient().Do(req)
 	if err != nil {
 		return fmt.Errorf("add preload %q: %w", name, err)
 	}
@@ -274,7 +276,7 @@ func (c *APIClient) DeletePreload(ctx context.Context, name string) error {
 		return err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.preloadHTTPClient().Do(req)
 	if err != nil {
 		return fmt.Errorf("delete preload %q: %w", name, err)
 	}
@@ -294,7 +296,7 @@ func (c *APIClient) ListPreloads(ctx context.Context) (map[string]bool, error) {
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.preloadHTTPClient().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("list preloads: %w", err)
 	}

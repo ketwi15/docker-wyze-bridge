@@ -30,7 +30,10 @@ func (m *Manager) runAddPreload(ctx context.Context, cam *Camera) {
 		return
 	}
 	_, protocol := m.streamSourceFor(cam)
-	if err := go2rtc.AddPreload(ctx, cam.Name()); err != nil {
+	m.preloadAPI.Lock()
+	err := go2rtc.AddPreload(ctx, cam.Name())
+	m.preloadAPI.Unlock()
+	if err != nil {
 		dec := m.stallTracker.RecordPreloadFailure(cam.Name(), protocol)
 		if !dec.Restart {
 			m.log.Warn().Err(err).

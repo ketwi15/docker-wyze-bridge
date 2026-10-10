@@ -46,6 +46,7 @@ type Manager struct {
 	stallTracker       *StallTracker
 	stallRestarting    sync.Map // camera name → struct{}
 	preloadInFlight    sync.Map // camera name → struct{}
+	preloadAPI         sync.Mutex // go2rtc preload HTTP calls block each other
 }
 
 // chronicErrorThreshold is the consecutive-error count at which a
@@ -346,7 +347,9 @@ func (m *Manager) HealthCheck(ctx context.Context) {
 		m.log.Warn().Err(err).Msg("health check: failed to list streams")
 		return
 	}
+	m.preloadAPI.Lock()
 	preloads, preloadErr := go2rtc.ListPreloads(ctx)
+	m.preloadAPI.Unlock()
 	if preloadErr != nil {
 		m.log.Warn().Err(preloadErr).Msg("health check: failed to list preloads")
 		preloads = nil
@@ -581,7 +584,9 @@ func (m *Manager) StopStream(ctx context.Context, name string) {
 	}
 	if go2rtc := m.go2rtcClient(); go2rtc != nil {
 		_ = go2rtc.DeleteStream(ctx, name)
+		m.preloadAPI.Lock()
 		_ = go2rtc.DeletePreload(ctx, name)
+		m.preloadAPI.Unlock()
 	}
 	m.stallTracker.Reset(name)
 	m.changeState(cam, StateOffline)
